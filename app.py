@@ -7,6 +7,14 @@ from datetime import date, timedelta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import requests
+from stocknews import StockNews
+import nltk
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+
+try:
+    nltk.data.find('sentiment/vader_lexicon.zip')
+except LookupError:
+    nltk.download('vader_lexicon')
 
 st.set_page_config(page_title="StockLab", layout="wide", initial_sidebar_state="expanded")
 
@@ -85,12 +93,10 @@ st.markdown("""
         font-family: 'Inter', sans-serif;
         text-transform: uppercase;
     }
-    
     .stTabs [aria-selected="true"] {
         color: #58a6ff;
         border-bottom: 2px solid #58a6ff;
     }
-
     div[data-baseweb="tab-highlight"] {
         background-color: transparent !important;
     }
@@ -116,6 +122,25 @@ st.markdown("""
         letter-spacing: 1px;
     }
     
+    .news-card {
+        background-color: #1c2128;
+        padding: 15px;
+        border-radius: 8px;
+        border: 1px solid #30363d;
+        margin-bottom: 10px;
+    }
+    .news-title {
+        color: #fff;
+        font-size: 14px;
+        font-weight: 600;
+        margin-bottom: 5px;
+    }
+    .news-meta {
+        color: #8b949e;
+        font-size: 11px;
+        font-family: 'Inter', sans-serif;
+    }
+    
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
 </style>
@@ -124,7 +149,6 @@ st.markdown("""
 with st.sidebar:
     st.markdown('<div class="sidebar-logo">StockLab</div>', unsafe_allow_html=True)
     st.markdown('<div class="sidebar-sub">INSTITUTIONAL ANALYTICS</div>', unsafe_allow_html=True)
-    
     st.markdown("---")
     
     user_input = st.text_input("ASSET TICKER", "RELIANCE").upper()
@@ -139,7 +163,7 @@ with st.sidebar:
             st.session_state['run_analysis'] = False
 
 def get_currency_symbol(currency_code):
-    symbols = {"USD": "$", "INR": "Rs.", "EUR": "E", "GBP": "L", "JPY": "Y"}
+    symbols = {"USD": "$", "INR": "₹", "EUR": "€", "GBP": "£", "JPY": "¥"}
     return symbols.get(currency_code, currency_code + " ")
 
 def search_global_market(query):
@@ -269,13 +293,17 @@ if st.session_state['run_analysis']:
         rsi_sig = "SELL" if rsi_val > 70 else "BUY" if rsi_val < 30 else "HOLD"
         m4.metric(f"RSI ({rsi_val:.0f})", rsi_sig)
 
-        tab1, tab2, tab3 = st.tabs(["PRICE", "MOMENTUM", "DATA"])
+        tab1, tab2, tab3, tab4 = st.tabs(["PRICE", "MOMENTUM", "DATA", "NEWS AI"])
         
         with tab1:
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=df_quant.index, y=df_quant['Close'], mode='lines', name='PRICE', line=dict(color='#00F0FF', width=2)))
-            fig.add_trace(go.Scatter(x=df_quant.index, y=df_quant['Upper_Band'], mode='lines', name='UPPER', line=dict(color='rgba(0, 255, 0, 0.4)', width=1, dash='dot')))
-            fig.add_trace(go.Scatter(x=df_quant.index, y=df_quant['Lower_Band'], mode='lines', name='LOWER', line=dict(color='rgba(255, 0, 0, 0.4)', width=1, dash='dot'), fill='tonexty', fillcolor='rgba(0, 255, 0, 0.05)'))
+            fig.add_trace(go.Scatter(x=df_quant.index, y=df_quant['Close'], mode='lines', name='PRICE', 
+                                     line=dict(color='#00F0FF', width=2)))
+            fig.add_trace(go.Scatter(x=df_quant.index, y=df_quant['Upper_Band'], mode='lines', name='UPPER', 
+                                     line=dict(color='rgba(0, 255, 0, 0.4)', width=1, dash='dot')))
+            fig.add_trace(go.Scatter(x=df_quant.index, y=df_quant['Lower_Band'], mode='lines', name='LOWER', 
+                                     line=dict(color='rgba(255, 0, 0, 0.4)', width=1, dash='dot'), 
+                                     fill='tonexty', fillcolor='rgba(0, 255, 0, 0.05)'))
             
             fig.update_layout(
                 template='plotly_dark',
@@ -292,7 +320,8 @@ if st.session_state['run_analysis']:
             st.plotly_chart(fig, use_container_width=True)
             
         with tab2:
-            fig2 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.6, 0.4])
+            fig2 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, 
+                                 row_heights=[0.6, 0.4])
             fig2.add_trace(go.Scatter(x=df_quant.index, y=df_quant['MACD'], name='MACD', line=dict(color='#00F0FF')), row=1, col=1)
             fig2.add_trace(go.Scatter(x=df_quant.index, y=df_quant['Signal_Line'], name='SIG', line=dict(color='#FFA500')), row=1, col=1)
             fig2.add_trace(go.Scatter(x=df_quant.index, y=df_quant['RSI'], name='RSI', line=dict(color='#DDA0DD')), row=2, col=1)
@@ -305,6 +334,59 @@ if st.session_state['run_analysis']:
             
         with tab3:
             st.dataframe(df_quant.tail(50), use_container_width=True, height=500)
+            
+        with tab4:
+            st.markdown("#### AI SENTIMENT ANALYSIS")
+            try:
+                sn = StockNews([resolved_ticker], save_news=False)
+                df_news = sn.read_rss()
+                
+                if df_news is None or df_news.empty:
+                    st.warning("No recent news articles found for this ticker.")
+                else:
+                    sia = SentimentIntensityAnalyzer()
+                    
+                    def get_sentiment_score(title):
+                        return sia.polarity_scores(title)['compound']
+                    
+                    df_news['AI_Score'] = df_news['title'].apply(get_sentiment_score)
+                    
+                    sentiment_score = df_news['AI_Score'].mean()
+                    
+                    if sentiment_score > 0.15:
+                        overall_sentiment = "POSITIVE (BULLISH)"
+                        s_color = "#00FF00"
+                    elif sentiment_score < -0.15:
+                        overall_sentiment = "NEGATIVE (BEARISH)"
+                        s_color = "#FF0000"
+                    else:
+                        overall_sentiment = "NEUTRAL"
+                        s_color = "#FFA500"
+                    
+                    st.markdown(f"""
+                    <div style="background-color: #1c2128; padding: 20px; border-radius: 8px; border: 1px solid #30363d; margin-bottom: 20px; text-align: center;">
+                        <h2 style="color: {s_color}; margin:0;">{overall_sentiment}</h2>
+                        <p style="color: #8b949e; margin:0;">VADER AI Compound Score: {sentiment_score:.2f}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    for i in range(min(5, len(df_news))):
+                        item = df_news.iloc[i]
+                        news_sentiment = item['AI_Score']
+                        
+                        if news_sentiment > 0.1: title_color = "#00FF00" 
+                        elif news_sentiment < -0.1: title_color = "#FF0000"
+                        else: title_color = "#e0e0e0"
+                            
+                        st.markdown(f"""
+                        <div class="news-card">
+                            <div class="news-title" style="color: {title_color};">{item['title']}</div>
+                            <div class="news-meta">{item['published']} | Sentiment: {news_sentiment:.2f}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+            except Exception as e:
+                st.error(f"AI SYSTEM ERROR: {str(e)}")
 
 else:
     st.markdown("""
