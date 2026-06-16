@@ -607,7 +607,7 @@ with st.sidebar:
         st.session_state['chat_history']  = []
         st.session_state['vs']            = None
     if 'run_analysis' not in st.session_state:
-        st.session_state['run_analysis'] = False
+        st.session_state['run_analysis'] = True
 
     st.markdown(f"""
     <div class="sl-rule"></div>
