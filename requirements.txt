@@ -5,3 +5,11 @@ numpy
 scikit-learn
 plotly
 requests
+stocknews
+google-generativeai
+langchain-google-genai
+faiss-cpu
+langchain-community
+langchain
+langchain-core
+langchain-text-splitters
