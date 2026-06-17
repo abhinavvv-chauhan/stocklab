@@ -636,7 +636,7 @@ with st.sidebar:
     <div style="font-family:var(--mono);font-size:9px;color:var(--text2);line-height:2;">
       <div>ENGINE · RandomForest v2</div>
       <div>EMBED · text-embedding-004</div>
-      <div>LLM · gemini-1.5-flash</div>
+      <div>LLM · gemini-2.5-flash</div>
       <div>NLP · VADER Sentiment</div>
       <div style="margin-top:8px;color:#2a221a;">
         build {date.today().strftime("%Y%m%d")}
@@ -749,7 +749,7 @@ Analyst Response:""",
         input_variables=["context", "question"]
     )
     
-    chain = prompt | ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.2) | StrOutputParser()
+    chain = prompt | ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.2) | StrOutputParser()
     return chain.invoke({"context": "\n\n".join(d.page_content for d in docs), "question": question})
 
 def chart_layout(h=420):
@@ -793,7 +793,7 @@ if not st.session_state.get('run_analysis', False):
         </div>
       </div>
       <div style="margin-top:24px;font-family:var(--mono);font-size:9px;color:#2a221a;letter-spacing:2px;">
-        FAISS · VADER · RandomForest · Gemini 1.5
+        FAISS · VADER · RandomForest · Gemini 2.5
       </div>
     </div>
     """, unsafe_allow_html=True)
