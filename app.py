@@ -33,10 +33,13 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-GEMINI_API_KEY = (
-    st.secrets.get("GOOGLE_API_KEY", None)
-    or os.environ.get("GOOGLE_API_KEY", "")
-)
+try:
+    GEMINI_API_KEY = st.secrets.get("GOOGLE_API_KEY", "")
+except Exception:
+    GEMINI_API_KEY = ""
+if not GEMINI_API_KEY:
+    GEMINI_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
+
 if GEMINI_API_KEY:
     os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY
 
@@ -103,7 +106,6 @@ html, body, .stApp {
   padding: 0 !important;
   max-width: 100% !important;
 }
-
 section[data-testid="stSidebar"] {
   background: var(--bg1) !important;
   border-right: 1px solid var(--border) !important;
@@ -555,7 +557,9 @@ div[data-baseweb="tab-border"]    { display: none !important; }
   color: var(--text2);
 }
 
-#MainMenu, footer, header, .stDeployButton { display: none !important; }
+/* FIX: Keep the native toggle button visible by making the header transparent instead of display: none */
+#MainMenu, footer, .stDeployButton { display: none !important; }
+header { background: transparent !important; box-shadow: none !important; }
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: var(--bg0); }
@@ -589,37 +593,56 @@ with st.sidebar:
     st.markdown('<div class="sl-rule-gold"></div>', unsafe_allow_html=True)
 
     st.markdown('<div class="field-label">Asset Ticker</div>', unsafe_allow_html=True)
-    user_input = st.text_input("_ticker", value="TSLA", label_visibility="collapsed").upper()
+    user_input = st.text_input(
+        "_ticker",
+        value="TSLA",
+        label_visibility="collapsed"
+    ).upper()
 
     st.markdown('<div class="field-label">Historical Window</div>', unsafe_allow_html=True)
     years = st.slider("_years", 1, 10, 5, label_visibility="collapsed")
-    st.markdown(f'<div style="font-family:var(--mono);font-size:10px;color:var(--gold-dim);margin-top:-8px;margin-bottom:4px;">{years} yr{"s" if years>1 else ""} · ~{years*252} sessions</div>', unsafe_allow_html=True)
+
+    st.markdown(
+        f'<div style="font-family:var(--mono);font-size:10px;color:var(--gold-dim);margin-top:-8px;margin-bottom:4px;">'
+        f'{years} yr{"s" if years>1 else ""} · ~{years*252} sessions'
+        f'</div>',
+        unsafe_allow_html=True
+    )
 
     st.markdown('<div class="field-label">Forecast Horizon</div>', unsafe_allow_html=True)
     prediction_days = st.slider("_fdays", 1, 7, 1, label_visibility="collapsed")
-    st.markdown(f'<div style="font-family:var(--mono);font-size:10px;color:var(--gold-dim);margin-top:-8px;margin-bottom:4px;">{prediction_days} trading day{"s" if prediction_days>1 else ""} ahead</div>', unsafe_allow_html=True)
+
+    st.markdown(
+        f'<div style="font-family:var(--mono);font-size:10px;color:var(--gold-dim);margin-top:-8px;margin-bottom:4px;">'
+        f'{prediction_days} trading day{"s" if prediction_days>1 else ""} ahead'
+        f'</div>',
+        unsafe_allow_html=True
+    )
 
     st.markdown('<div class="sl-rule"></div>', unsafe_allow_html=True)
 
-    run = st.button("RUN  ANALYSIS", type="primary")
+    run = st.button("RUN ANALYSIS", type="primary")
+
     if run:
         st.session_state['run_analysis'] = True
-        st.session_state['chat_history']  = []
-        st.session_state['vs']            = None
+        st.session_state['chat_history'] = []
+        st.session_state['vs'] = None
+
     if 'run_analysis' not in st.session_state:
         st.session_state['run_analysis'] = True
 
     st.markdown(f"""
     <div class="sl-rule"></div>
     <div style="font-family:var(--mono);font-size:9px;color:var(--text2);line-height:2;">
-      <div>ENGINE  · RandomForest v2</div>
-      <div>EMBED   · gemini-embedding-001</div>
-      <div>LLM     · gemini-2.5-flash</div>
-      <div>NLP     · VADER Sentiment</div>
-      <div style="margin-top:8px;color:#2a221a;">build {date.today().strftime("%Y%m%d")}</div>
+      <div>ENGINE · RandomForest v2</div>
+      <div>EMBED · text-embedding-004</div>
+      <div>LLM · gemini-1.5-flash</div>
+      <div>NLP · VADER Sentiment</div>
+      <div style="margin-top:8px;color:#2a221a;">
+        build {date.today().strftime("%Y%m%d")}
+      </div>
     </div>
     """, unsafe_allow_html=True)
-
 
 def get_currency_symbol(code):
     return {"USD": "$", "INR": "₹", "EUR": "€", "GBP": "£", "JPY": "¥"}.get(code, code + " ")
@@ -677,7 +700,7 @@ def get_stock_data(user_query, years):
         return raw, currency_code, ticker_found, company_name
     return None, None, None, None
 
-def calculate_indicators(df, pd):
+def calculate_indicators(df, pred_days):
     d = df.copy()
     delta = d['Close'].diff()
     gain  = delta.where(delta > 0, 0).rolling(14).mean()
@@ -692,7 +715,7 @@ def calculate_indicators(df, pd):
     d['Upper_Band']  = d['SMA_20'] + d['Std_Dev'] * 2
     d['Lower_Band']  = d['SMA_20'] - d['Std_Dev'] * 2
     d['OBV']         = (np.sign(d['Close'].diff()) * d['Volume']).fillna(0).cumsum()
-    d['Target_Return'] = d['Close'].pct_change().shift(-pd)
+    d['Target_Return'] = d['Close'].pct_change().shift(-pred_days)
     d.dropna(inplace=True)
     return d
 
@@ -707,7 +730,8 @@ def build_vs(ticker, _df_news, key):
             r = _df_news.iloc[i]
             docs.append(Document(page_content=f"{r['published']} | {r['title']} | {r.get('summary','')}"))
     splits = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(docs)
-    return FAISS.from_documents(splits, GoogleGenerativeAIEmbeddings(model="gemini-embedding-001"))
+    
+    return FAISS.from_documents(splits, GoogleGenerativeAIEmbeddings(model="models/text-embedding-004"))
 
 def rag_query(question, vs, key):
     os.environ["GOOGLE_API_KEY"] = key
@@ -724,7 +748,8 @@ Question: {question}
 Analyst Response:""",
         input_variables=["context", "question"]
     )
-    chain = prompt | ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.2) | StrOutputParser()
+    
+    chain = prompt | ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.2) | StrOutputParser()
     return chain.invoke({"context": "\n\n".join(d.page_content for d in docs), "question": question})
 
 def chart_layout(h=420):
@@ -747,8 +772,7 @@ def chart_layout(h=420):
                         font=dict(family='Geist Mono, monospace', size=11)),
     )
 
-
-if not st.session_state['run_analysis']:
+if not st.session_state.get('run_analysis', False):
     st.markdown("""
     <div class="idle-screen">
       <div class="idle-logo">Stock<span>Lab</span></div>
@@ -769,12 +793,11 @@ if not st.session_state['run_analysis']:
         </div>
       </div>
       <div style="margin-top:24px;font-family:var(--mono);font-size:9px;color:#2a221a;letter-spacing:2px;">
-        FAISS · VADER · RandomForest · Gemini 2.5
+        FAISS · VADER · RandomForest · Gemini 1.5
       </div>
     </div>
     """, unsafe_allow_html=True)
     st.stop()
-
 
 
 with st.spinner(f"Loading {user_input}…"):
@@ -1035,7 +1058,7 @@ with tab4:
             st.info("No news articles found for this ticker.")
 
     with right_ai:
-        st.markdown('<div class="sec-head"><div class="sec-head-dot"></div><div class="sec-head-label">RAG Document Analyst · Gemini 2.5</div><div class="sec-head-line"></div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="sec-head"><div class="sec-head-dot"></div><div class="sec-head-label">RAG Document Analyst · Gemini 1.5</div><div class="sec-head-line"></div></div>', unsafe_allow_html=True)
 
         if not GEMINI_API_KEY:
             st.warning("Set `GOOGLE_API_KEY` in `.streamlit/secrets.toml` or as an environment variable to activate the AI analyst.")
@@ -1047,7 +1070,11 @@ with tab4:
                     try:
                         st.session_state['vs'] = build_vs(resolved_ticker, df_news, GEMINI_API_KEY)
                     except Exception as e:
-                        st.error(f"Indexing error: {e}")
+                        error_msg = str(e)
+                        if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+                            st.error("⚠️ **API Rate Limit Exceeded:** You made too many requests. Wait ~60 seconds and run the analysis again.")
+                        else:
+                            st.error(f"Indexing error: {error_msg}")
                         st.stop()
 
             chat_win = st.container(height=460)
@@ -1081,6 +1108,10 @@ with tab4:
                                 st.markdown(ans)
                                 st.session_state['chat_history'].append({"role": "assistant", "content": ans})
                             except Exception as e:
-                                st.error(f"Query error: {e}")
+                                error_msg = str(e)
+                                if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+                                    st.error("⚠️ **API Limit Exceeded:** Please wait 60 seconds.")
+                                else:
+                                    st.error(f"Query error: {error_msg}")
 
 st.markdown('</div>', unsafe_allow_html=True)
