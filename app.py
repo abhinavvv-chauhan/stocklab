@@ -635,7 +635,7 @@ with st.sidebar:
     <div class="sl-rule"></div>
     <div style="font-family:var(--mono);font-size:9px;color:var(--text2);line-height:2;">
       <div>ENGINE · RandomForest v2</div>
-      <div>EMBED · text-embedding-004</div>
+      <div>EMBED · text-embedding-001</div>
       <div>LLM · gemini-2.5-flash</div>
       <div>NLP · VADER Sentiment</div>
       <div style="margin-top:8px;color:#2a221a;">
@@ -731,7 +731,7 @@ def build_vs(ticker, _df_news, key):
             docs.append(Document(page_content=f"{r['published']} | {r['title']} | {r.get('summary','')}"))
     splits = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(docs)
     
-    return FAISS.from_documents(splits, GoogleGenerativeAIEmbeddings(model="models/text-embedding-004"))
+    return FAISS.from_documents(splits, GoogleGenerativeAIEmbeddings(model="models/text-embedding-001"))
 
 def rag_query(question, vs, key):
     os.environ["GOOGLE_API_KEY"] = key
