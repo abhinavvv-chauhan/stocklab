@@ -109,9 +109,23 @@ html, body, .stApp {
 section[data-testid="stSidebar"] {
   background: var(--bg1) !important;
   border-right: 1px solid var(--border) !important;
+  width: 260px !important;
+  min-width: 260px !important;
 }
 section[data-testid="stSidebar"] > div:first-child {
   padding: 28px 20px 20px !important;
+  width: 100% !important;
+  position: relative !important;
+}
+section[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+  padding: 28px 20px 20px !important;
+  overflow-y: auto !important;
+}
+section[data-testid="stSidebar"] .stSlider,
+section[data-testid="stSidebar"] .stTextInput,
+section[data-testid="stSidebar"] div.stButton {
+  max-width: 100% !important;
+  width: 100% !important;
 }
 
 .sl-wordmark {
@@ -635,7 +649,7 @@ with st.sidebar:
     <div class="sl-rule"></div>
     <div style="font-family:var(--mono);font-size:9px;color:var(--text2);line-height:2;">
       <div>ENGINE · RandomForest v2</div>
-      <div>EMBED · text-embedding-001</div>
+      <div>EMBED · gemini-embedding-001</div>
       <div>LLM · gemini-2.5-flash</div>
       <div>NLP · VADER Sentiment</div>
       <div style="margin-top:8px;color:#2a221a;">
@@ -666,39 +680,34 @@ def search_global_market(query):
 def get_stock_data(user_query, years):
     start = (date.today() - timedelta(days=years * 365)).strftime("%Y-%m-%d")
     end   = date.today().strftime("%Y-%m-%d")
-    ticker_found = company_name = None
+    
+    ticker_found, company_name = search_global_market(user_query)
     currency_code = "USD"
-
-    ns = f"{user_query.replace(' ','')}.NS"
-    try:
-        if not yf.Ticker(ns).history(period="1d").empty:
-            ticker_found = ns
-            company_name = yf.Ticker(ns).info.get('longName', user_query)
-            currency_code = "INR"
-    except:
-        pass
-
+    
     if not ticker_found:
-        ticker_found, company_name = search_global_market(user_query)
-        if ticker_found.endswith(".NS") or ticker_found.endswith(".BO"):
-            currency_code = "INR"
-        else:
-            try:
-                currency_code = yf.Ticker(ticker_found).info.get('currency', 'USD')
-            except:
-                pass
+        return None, None, None, None
 
-    if ticker_found:
-        raw = yf.Ticker(ticker_found).history(start=start, end=end)
-        if raw.empty:
-            return None, None, None, None
-        if isinstance(raw.columns, pd.MultiIndex):
-            raw.columns = raw.columns.get_level_values(0)
-        raw.reset_index(inplace=True)
-        raw['Date'] = pd.to_datetime(raw['Date']).dt.date
-        raw.set_index('Date', inplace=True)
-        return raw, currency_code, ticker_found, company_name
-    return None, None, None, None
+    if ticker_found.endswith(".NS") or ticker_found.endswith(".BO"):
+        currency_code = "INR"
+    else:
+        try:
+            currency_code = yf.Ticker(ticker_found).info.get('currency', 'USD')
+        except:
+            pass
+
+    raw = yf.Ticker(ticker_found).history(start=start, end=end)
+    
+    if raw.empty:
+        return None, None, None, None
+        
+    if isinstance(raw.columns, pd.MultiIndex):
+        raw.columns = raw.columns.get_level_values(0)
+        
+    raw.reset_index(inplace=True)
+    raw['Date'] = pd.to_datetime(raw['Date']).dt.date
+    raw.set_index('Date', inplace=True)
+    
+    return raw, currency_code, ticker_found, company_name
 
 def calculate_indicators(df, pred_days):
     d = df.copy()
@@ -731,7 +740,7 @@ def build_vs(ticker, _df_news, key):
             docs.append(Document(page_content=f"{r['published']} | {r['title']} | {r.get('summary','')}"))
     splits = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200).split_documents(docs)
     
-    return FAISS.from_documents(splits, GoogleGenerativeAIEmbeddings(model="models/text-embedding-001"))
+    return FAISS.from_documents(splits, GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001"))
 
 def rag_query(question, vs, key):
     os.environ["GOOGLE_API_KEY"] = key
@@ -1058,7 +1067,7 @@ with tab4:
             st.info("No news articles found for this ticker.")
 
     with right_ai:
-        st.markdown('<div class="sec-head"><div class="sec-head-dot"></div><div class="sec-head-label">RAG Document Analyst · Gemini 1.5</div><div class="sec-head-line"></div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="sec-head"><div class="sec-head-dot"></div><div class="sec-head-label">RAG Document Analyst · Gemini 2.5</div><div class="sec-head-line"></div></div>', unsafe_allow_html=True)
 
         if not GEMINI_API_KEY:
             st.warning("Set `GOOGLE_API_KEY` in `.streamlit/secrets.toml` or as an environment variable to activate the AI analyst.")
